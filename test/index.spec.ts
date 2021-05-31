@@ -512,3 +512,140 @@ test("preload specified modules even if they aren't requested", async () => {
   expect(chatsSpy).toBeCalledTimes(1);
   expect(calendarSpy).toBeCalledTimes(1);
 });
+
+test("building during a build shouldn't override already created schema", async () => {
+  const map: SchemaModuleMap = {
+    modules: [
+      () => import("./fixtures/calendar"),
+      () => import("./fixtures/chats"),
+      () => import("./fixtures/blog"),
+    ],
+    sharedModule: () => import("./fixtures/shared"),
+    preloadModules: [],
+    types: {
+      Query: {
+        events: 0,
+        chats: 1,
+        posts: 2,
+      },
+      Mutation: {},
+      Subscription: {},
+    },
+  };
+  const calendarSpy = jest.fn(map.modules[0]);
+  const chatsSpy = jest.fn(map.modules[1]);
+  const blogSpy = jest.fn(map.modules[2]);
+  const schemaBuilderSpy = jest.fn(schemaBuilder);
+  const link = createIncrementalSchemaLink({
+    map: {
+      ...map,
+      modules: [calendarSpy, chatsSpy, blogSpy],
+    },
+    schemaBuilder: schemaBuilderSpy,
+  });
+  await Promise.all([
+    executeLink(link, {
+      query: parse(/* GraphQL */ `
+        {
+          chats {
+            id
+            title
+          }
+        }
+      `),
+    }),
+    executeLink(link, {
+      query: parse(/* GraphQL */ `
+        {
+          posts {
+            id
+          }
+        }
+      `),
+    }),
+    executeLink(link, {
+      query: parse(/* GraphQL */ `
+        {
+          chats {
+            id
+            title
+          }
+        }
+      `),
+    }),
+  ]);
+  await executeLink(link, {
+    query: parse(/* GraphQL */ `
+      {
+        chats {
+          id
+        }
+      }
+    `),
+  });
+  expect(schemaBuilderSpy).toBeCalledTimes(3);
+});
+
+test("requests happening at the same time should get batched when batching option is on", async () => {
+  const map: SchemaModuleMap = {
+    modules: [
+      () => import("./fixtures/calendar"),
+      () => import("./fixtures/chats"),
+      () => import("./fixtures/blog"),
+    ],
+    sharedModule: () => import("./fixtures/shared"),
+    preloadModules: [],
+    types: {
+      Query: {
+        events: 0,
+        chats: 1,
+        posts: 2,
+      },
+      Mutation: {},
+      Subscription: {},
+    },
+  };
+  const calendarSpy = jest.fn(map.modules[0]);
+  const chatsSpy = jest.fn(map.modules[1]);
+  const blogSpy = jest.fn(map.modules[2]);
+  const schemaBuilderSpy = jest.fn(schemaBuilder);
+  const link = createIncrementalSchemaLink({
+    map: {
+      ...map,
+      modules: [calendarSpy, chatsSpy, blogSpy],
+    },
+    schemaBuilder: schemaBuilderSpy,
+    batchRequests: true,
+  });
+  await Promise.all([
+    executeLink(link, {
+      query: parse(/* GraphQL */ `
+        {
+          chats {
+            id
+            title
+          }
+        }
+      `),
+    }),
+    executeLink(link, {
+      query: parse(/* GraphQL */ `
+        {
+          posts {
+            id
+          }
+        }
+      `),
+    }),
+  ]);
+  await executeLink(link, {
+    query: parse(/* GraphQL */ `
+      {
+        chats {
+          id
+        }
+      }
+    `),
+  });
+  expect(schemaBuilderSpy).toBeCalledTimes(1);
+});
