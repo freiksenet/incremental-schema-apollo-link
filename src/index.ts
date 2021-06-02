@@ -394,7 +394,7 @@ const enqueuePostPromiseJob =
           process.nextTick(fn);
         });
       }
-    : setImmediate || setTimeout;
+    : window.setImmediate || window.setTimeout;
 
 type Batch<R> = {
   hasDispatched: Boolean;
@@ -407,7 +407,11 @@ function accumulateInImmediate<A, R>(
   let accumulatedArgs: A[] = [];
   let batch: Batch<R> | undefined;
   return (args: A[]) => {
-    accumulatedArgs.push(...args);
+    args.forEach((arg) => {
+      if (accumulatedArgs.indexOf(arg) === -1) {
+        accumulatedArgs.push(arg);
+      }
+    });
     if (!batch || batch.hasDispatched) {
       const promise: Promise<R> = new Promise((resolve) => {
         enqueuePostPromiseJob(() => {
